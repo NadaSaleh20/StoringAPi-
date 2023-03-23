@@ -1,0 +1,115 @@
+﻿<h3>Apidataa</h3>
+
+@page "/ApiData"
+@inject IHttpClientFactory _clientfactory
+@inject HTTPClientProject.Db.AplicationDBContext _context
+
+@*Here We will Display Data After OnInitializedAsync invoked*@
+@* If we had error string *@
+@if (!String.IsNullOrWhiteSpace(errorString))
+{
+    <div class="h2">@errorString</div>
+}
+else if (datamodel is null)
+{
+    <div class="h4">Loading</div>
+}
+
+@*EveryThing is ok , No error Message and model not Emty , Create Tabel With Value in Api*@
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th scope="col">id</th>
+                <th scope="col">employee_name</th>
+                <th scope="col">employee_salary</th>
+                <th scope="col">employee_age</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in datamodel.data)
+            {
+                <tr>
+                    <td>@item.id</td>
+                    <td>@item.employee_name</td>
+                    <td>@item.employee_salary</td>
+                    <td>@item.employee_age</td>
+                </tr>
+            }
+
+        </tbody>
+    </table>
+}
+
+@code {
+
+    //inilaze two instance From the Model , one to get Data in it if it Sucees , string for erroe mes
+    APIDataModel datamodel;
+    string errorString;
+
+    //This Fun called after injection happend , Befor The Page Rendering
+    protected override async Task OnInitializedAsync()
+    {
+
+        var client = _clientfactory.CreateClient("meta");
+        try
+        {
+            
+            datamodel = await client.GetFromJsonAsync<APIDataModel>("v1/employees");
+            errorString = null;
+            await AddToDataBase(datamodel);
+        }
+        catch (Exception ex)
+        {
+            errorString = $"There was an erorr   {ex.Message}";
+        }
+
+    }
+
+    public async Task AddToDataBase(APIDataModel datamodel)
+    {
+        //Datum List of object
+        var Datum = datamodel.data;
+        //All EmployeeName in The DB
+        var EmpDb =  _context.Emoloyee.Select(x => x.employee_name).ToList();
+        //get specefic obj (Datum) that List of EmpDb Contain name exit in the Db
+        var UpdateEmployee =Datum.Where(x => EmpDb.Contains(x.employee_name));
+        //if not founded we can Added to it 
+        var AddEmployee = Datum.Where(x =>!EmpDb.Contains(x.employee_name));
+        //Create List To Add , List To Update
+        var AddList = new List<Emoloyee>();
+      
+        //now Added the element you want to add
+        if (AddEmployee.Any())
+        {
+            AddList= AddEmployee.Select(x => new Emoloyee
+            {
+                employee_name = x.employee_name,
+                employee_age = x.employee_age,
+                employee_salary = x.employee_salary
+            }).ToList();
+            _context.Emoloyee.AddRange(AddList);
+        }
+        //now if the element Founded in The DB, you must Take The Value From Api 
+        if (UpdateEmployee.Any())
+        {
+            var names = UpdateEmployee.Select(x => x.employee_name).ToList();
+            //Find obj in the Db that have name must Update(Speasfic Row)
+            var emp = _context.Emoloyee.Where(x => names.Contains(x.employee_name)).ToList();
+            emp.ForEach(x =>
+            {
+                //we must get the object we must to convert
+                var e =  UpdateEmployee.FirstOrDefault(y => y.employee_name == x.employee_name);
+                x.employee_name = e.employee_name;
+                x.employee_age = e.employee_age;
+                x.employee_salary = e.employee_salary;
+
+            });
+            _context.UpdateRange(emp);
+
+        }
+        await _context.SaveChangesAsync();
+    }
+
+}
